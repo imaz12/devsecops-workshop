@@ -6,108 +6,132 @@ on:
 
   push:
 
-    branches:
-
-      - main
-
-  pull_request:
-
-    branches:
-
-      - main
+    branches: [ main ]
 
 
 
 jobs:
 
-  build-and-push:
+  pipeline:
 
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
 
 
 
     steps:
 
-      # 1. Checkout repo
-
-      - name: Checkout code
-
-        uses: actions/checkout@v3
+    - uses: actions/checkout@v4
 
 
 
-      # 2. Set up Docker
+    - name: Generate Semantic Version
 
-      - name: Set up Docker Buildx
+      id: version
 
-        uses: docker/setup-buildx-action@v2
+      uses: paulhatch/semantic-version@v5.4.0
 
+      with:
 
+        tag_prefix: "v"
 
-      # 3. Login to GHCR
+        format: "${major}.${minor}.${patch}"
 
-      - name: Log in to GHCR
+        major_pattern: "BREAKING CHANGE"
 
-        uses: docker/login-action@v2
-
-        with:
-
-          registry: ghcr.io
-
-          username: ${{ github.actor }}
-
-          password: ${{ secrets.GITHUB_TOKEN }}
+        minor_pattern: "feat"
 
 
 
-      # 4. Set VERSION variable
+    - name: Print version
 
-      - name: Set VERSION variable
-
-        run: echo "VERSION=$(date +%Y%m%d%H%M%S)" >> $GITHUB_ENV
+      run: echo "VERSION=${{ steps.version.outputs.version }}"
 
 
 
-     # 5. Build Docker image from app/ folder
+    - name: Build Docker Image
 
-      - name: Build Docker image
+      run: |
 
-        run: |
+        VERSION=${{ steps.version.outputs.version }}
 
-          echo "Building Docker image..."
+        docker build --no-cache \
 
-          docker build -t ghcr.io/imaz12/devsecops-app:${VERSION} ./app
+          -t ghcr.io/${{ github.repository_owner }}/devsecops-app:$VERSION \
 
-          docker tag ghcr.io/imaz12/devsecops-app:${VERSION} ghcr.io/imaz12/devsecops-app:latest
+          -t ghcr.io/${{ github.repository_owner }}/devsecops-app:latest \
 
-        env:
-
-          VERSION: ${{ env.VERSION }}
+          -f app/Dockerfile app/
 
 
 
-      # 6. Push Docker image
+    - name: Scan Image with Trivy
 
-      - name: Push Docker image to GHCR
+      uses: aquasecurity/trivy-action@0.20.0
 
-        run: |
+      with:
 
-          echo "Pushing Docker image..."
+        image-ref: ghcr.io/${{ github.repository_owner }}/devsecops-app:latest
 
-          docker push ghcr.io/imaz12/devsecops-app:${VERSION}
+        severity: CRITICAL,HIGH
 
-          docker push ghcr.io/imaz12/devsecops-app:latest
+        ignore-unfixed: true
 
-        env:
-
-          VERSION: ${{ env.VERSION }}
+        exit-code: "0"
 
 
 
-      # 7. Optional: Deploy / Secrets
+    - name: Login to GHCR
 
-      - name: Create GHCR Secret
+      run: echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-        run: |
 
-          echo "Create secrets or deploy here..."
+
+    - name: Push Images
+
+      run: |
+
+        VERSION=${{ steps.version.outputs.version }}
+
+        docker push ghcr.io/${{ github.repository_owner }}/devsecops-app:$VERSION
+
+        docker push ghcr.io/${{ github.repository_owner }}/devsecops-app:latest
+
+
+
+    - name: Create GHCR Secret
+
+      run: |
+
+        kubectl delete secret ghcr-secret --ignore-not-found=true
+
+        kubectl create secret docker-registry ghcr-secret \
+
+          --docker-server=ghcr.io \
+
+          --docker-username=${{ github.actor }} \
+
+          --docker-password=${{ secrets.GHCR_PAT }} \
+
+          --docker-email=dummy@example.com
+
+
+
+      - name: Apply Manifests
+
+      run: kubectl apply -f k8s/
+
+
+
+    - name: Patch Deployment With Version
+
+      run: |
+
+        VERSION=${{ steps.version.outputs.version }}
+
+        kubectl set image deployment/devsecops-app web=ghcr.io/${{ github.repository_owner }}/devsecops-app:$VERSION
+
+
+
+    - name: Wait for Rollout
+
+      run: kubectl rollout status deployment/devsecops-app
