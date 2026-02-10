@@ -60,29 +60,29 @@ jobs:
 
 
 
-      # 4. Set version (optional: from tag or commit hash)
+      # 4. Set VERSION variable
 
       - name: Set VERSION variable
 
-        id: version
-
-        run: |
-
-          VERSION=$(date +%Y%m%d%H%M%S)
-
-          echo "VERSION=$VERSION" >> $GITHUB_ENV
+        run: echo "VERSION=$(date +%Y%m%d%H%M%S)" >> $GITHUB_ENV
 
 
 
-      # 5. Build Docker image
+     # 5. Build Docker image from app/ folder
 
       - name: Build Docker image
 
         run: |
 
-          docker build -t ghcr.io/imaz12/devsecops-app:$VERSION .
+          echo "Building Docker image..."
 
-          docker tag ghcr.io/imaz12/devsecops-app:$VERSION ghcr.io/imaz12/devsecops-app:latest
+          docker build -t ghcr.io/imaz12/devsecops-app:${VERSION} ./app
+
+          docker tag ghcr.io/imaz12/devsecops-app:${VERSION} ghcr.io/imaz12/devsecops-app:latest
+
+        env:
+
+          VERSION: ${{ env.VERSION }}
 
 
 
@@ -92,18 +92,22 @@ jobs:
 
         run: |
 
-          docker push ghcr.io/imaz12/devsecops-app:$VERSION
+          echo "Pushing Docker image..."
+
+          docker push ghcr.io/imaz12/devsecops-app:${VERSION}
 
           docker push ghcr.io/imaz12/devsecops-app:latest
 
+        env:
+
+          VERSION: ${{ env.VERSION }}
 
 
-      # 7. (Optional) Deploy or create secrets
+
+      # 7. Optional: Deploy / Secrets
 
       - name: Create GHCR Secret
 
         run: |
 
-          echo "Creating GHCR secret..."
-
-          # add your secret creation or deploy commands here
+          echo "Create secrets or deploy here..."
