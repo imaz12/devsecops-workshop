@@ -95,43 +95,22 @@ jobs:
         docker push ghcr.io/${{ github.repository_owner }}/devsecops-app:$VERSION
 
         docker push ghcr.io/${{ github.repository_owner }}/devsecops-app:latest
-
-
-
     - name: Create GHCR Secret
-
       run: |
-
         kubectl delete secret ghcr-secret --ignore-not-found=true
-
         kubectl create secret docker-registry ghcr-secret \
-
           --docker-server=ghcr.io \
-
           --docker-username=${{ github.actor }} \
-
           --docker-password=${{ secrets.GHCR_PAT }} \
-
           --docker-email=dummy@example.com
 
-
-
-      - name: Apply Manifests
-
+    - name: Apply Manifests
       run: kubectl apply -f k8s/
 
-
-
     - name: Patch Deployment With Version
-
       run: |
-
         VERSION=${{ steps.version.outputs.version }}
-
         kubectl set image deployment/devsecops-app web=ghcr.io/${{ github.repository_owner }}/devsecops-app:$VERSION
 
-
-
     - name: Wait for Rollout
-
       run: kubectl rollout status deployment/devsecops-app
