@@ -1,0 +1,113 @@
+name: DevSecOps CI/CD
+
+
+
+on:
+
+  push:
+
+    branches: [ main ]
+
+
+
+jobs:
+
+  pipeline:
+
+    runs-on: self-hosted
+
+
+
+    steps:
+
+    - uses: actions/checkout@v4
+
+
+
+    - name: Generate Semantic Version
+
+      id: version
+
+      uses: paulhatch/semantic-version@v5.4.0
+
+      with:
+
+        tag_prefix: "v"
+
+        format: "${major}.${minor}.${patch}"
+
+        major_pattern: "BREAKING CHANGE"
+
+        minor_pattern: "feat"
+
+
+
+    - name: Build Docker Image
+
+      run: |
+
+        VERSION=${{ steps.version.outputs.version }}
+
+        docker build --no-cache \
+
+          -t ghcr.io/imaz12/devsecops-app:$VERSION \
+
+          -t ghcr.io/imaz12/devsecops-app:latest \
+
+          -f app/Dockerfile app/
+
+
+
+    - name: Login to GHCR
+
+      run: echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u imaz12 --password-stdin
+
+
+
+    - name: Push Images
+
+      run: |
+
+        VERSION=${{ steps.version.outputs.version }}
+
+        docker push ghcr.io/imaz12/devsecops-app:$VERSION
+
+        docker push ghcr.io/imaz12/devsecops-app:lattest
+
+ - name: Create GHCR Secret
+
+      run: |
+
+        kubectl delete secret ghcr-secret --ignore-not-found=true
+
+        kubectl create secret docker-registry ghcr-secret \
+
+          --docker-server=ghcr.io \
+
+          --docker-username=imaz12 \
+
+          --docker-password=${{ secrets.GHCR_PAT }} \
+
+          --docker-email=dummy@example.com
+
+
+
+    - name: Apply Kubernetes
+
+      run: kubectl apply -f k8s/
+
+
+
+    - name: Update Deployment Image
+
+      run: |
+
+        VERSION=${{ steps.version.outputs.version }}
+
+        kubectl set image deployment/devsecops-app web=ghcr.io/imaz12/devsecops-app:$VERSION
+
+
+
+    - name: Wait for rollout
+
+      run: kubectl rollout status deployment/devsecops-app
